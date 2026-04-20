@@ -1,3 +1,4 @@
+export { CreateLinkedTemplateLocalFile } from './CreateLinkedTemplateLocalFile';
 export { LinkTemplateFromURL } from './LinkTemplateFromURL';
 export { LinkTemplateInteractive } from './LinkTemplateInteractive';
 export { UnlinkAllTemplates } from './UnlinkAllTemplates';
