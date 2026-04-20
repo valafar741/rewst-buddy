@@ -198,20 +198,76 @@ export const SyncManager = new (class _ implements vscode.Disposable {
 		}
 	}
 
-	private async syncTemplateInternal(doc: vscode.TextDocument) {
-		log.trace('syncTemplateInternal: starting');
+	/** Overwrite local file with latest remote template body (no merge / conflict prompt). */
+	async forceDownloadRemoteTemplate(doc: vscode.TextDocument): Promise<void> {
+		const uriKey = doc.uri.toString();
+		if (this.syncingUris.has(uriKey)) {
+			log.debug('forceDownloadRemoteTemplate: already in progress, skipping');
+			return;
+		}
+		this.syncingUris.add(uriKey);
+		try {
+			await this.forceDownloadRemoteTemplateInternal(doc);
+		} catch (e) {
+			throw log.error('forceDownloadRemoteTemplate: failed', e);
+		} finally {
+			this.syncingUris.delete(uriKey);
+		}
+	}
 
+	private async forceDownloadRemoteTemplateInternal(doc: vscode.TextDocument): Promise<void> {
+		await this.ensureTemplateDocumentSaved(doc);
+		const link = LinkManager.getTemplateLink(doc.uri);
+		const session = SessionManager.getSessionForOrg(link.org.id);
+		let remoteTemplate: FullTemplateFragment;
+		try {
+			remoteTemplate = await session.getTemplate(link.template.id);
+		} catch {
+			throw log.error('forceDownloadRemoteTemplateInternal: failed to fetch remote template');
+		}
+		await this.applyTemplateToDocument(doc, session, remoteTemplate);
+	}
+
+	/** Push current local file body to Rewst (no merge / conflict prompt). */
+	async forceUploadLocalTemplate(doc: vscode.TextDocument): Promise<void> {
+		const uriKey = doc.uri.toString();
+		if (this.syncingUris.has(uriKey)) {
+			log.debug('forceUploadLocalTemplate: already in progress, skipping');
+			return;
+		}
+		this.syncingUris.add(uriKey);
+		try {
+			await this.forceUploadLocalTemplateInternal(doc);
+		} catch (e) {
+			throw log.error('forceUploadLocalTemplate: failed', e);
+		} finally {
+			this.syncingUris.delete(uriKey);
+		}
+	}
+
+	private async forceUploadLocalTemplateInternal(doc: vscode.TextDocument): Promise<void> {
+		await this.ensureTemplateDocumentSaved(doc);
+		await this.updateTemplateBody(doc);
+	}
+
+	private async ensureTemplateDocumentSaved(doc: vscode.TextDocument): Promise<void> {
 		if (doc.isUntitled) {
-			throw log.error('syncTemplateInternal: document is untitled');
+			throw log.error('ensureTemplateDocumentSaved: document is untitled');
 		}
 
 		if (doc.isDirty) {
-			log.trace('syncTemplateInternal: saving dirty document');
+			log.trace('ensureTemplateDocumentSaved: saving dirty document');
 			const resultUri = await doc.save();
 			if (!resultUri) {
-				throw log.error('syncTemplateInternal: failed to save document');
+				throw log.error('ensureTemplateDocumentSaved: failed to save document');
 			}
 		}
+	}
+
+	private async syncTemplateInternal(doc: vscode.TextDocument) {
+		log.trace('syncTemplateInternal: starting');
+
+		await this.ensureTemplateDocumentSaved(doc);
 
 		const link = LinkManager.getTemplateLink(doc.uri);
 		log.debug('syncTemplateInternal: syncing template', {
