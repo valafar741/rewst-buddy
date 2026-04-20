@@ -1,10 +1,23 @@
 import { CommandInitiater } from '@commands';
 import { extPrefix, context as globalVSContext } from '@global';
-import { LinkManager, SyncManager, SyncOnSaveManager, TemplateBundleManager, TemplateMetadataStore } from '@models';
-import { TemplateDefinitionProvider, TemplateHoverProvider } from './providers';
+import {
+	LinkManager,
+	SyncManager,
+	SyncOnSaveManager,
+	TemplateBundleManager,
+	TemplateMetadataStore,
+	WorkspaceLinksFile,
+} from '@models';
+import { LinkedTemplateFileDecorationProvider, TemplateDefinitionProvider, TemplateHoverProvider } from './providers';
 import { Server } from '@server';
 import { SessionManager } from '@sessions';
-import { BundleTreeDataProvider, RewstViewProvider, SessionTreeDataProvider, StatusBar } from '@ui';
+import {
+	BundleTreeDataProvider,
+	LinkedTemplatesTreeDataProvider,
+	RewstViewProvider,
+	SessionTreeDataProvider,
+	StatusBar,
+} from '@ui';
 import { log } from '@utils';
 import vscode from 'vscode';
 
@@ -30,10 +43,21 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Register managers (self-register for their respective VS Code events)
 	// Note: SessionManager must init before SyncManager so sessions are loaded first
 	context.subscriptions.push(LinkManager.init());
+	context.subscriptions.push(WorkspaceLinksFile.init());
+	const linkedTemplateDecorations = new LinkedTemplateFileDecorationProvider();
+	context.subscriptions.push(
+		linkedTemplateDecorations,
+		vscode.window.registerFileDecorationProvider(linkedTemplateDecorations),
+	);
 	context.subscriptions.push(SyncOnSaveManager.init());
 	context.subscriptions.push(await SessionManager.init());
 	context.subscriptions.push(TemplateMetadataStore.init());
 	context.subscriptions.push(SyncManager.init());
+	const linkedTemplatesTreeProvider = new LinkedTemplatesTreeDataProvider();
+	context.subscriptions.push(
+		linkedTemplatesTreeProvider,
+		vscode.window.registerTreeDataProvider('rewst-buddy.linkedTemplatesTree', linkedTemplatesTreeProvider),
+	);
 	// Register BundleTreeDataProvider before init so it catches the first event
 	const bundleTreeProvider = new BundleTreeDataProvider();
 	context.subscriptions.push(
