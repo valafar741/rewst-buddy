@@ -1,4 +1,4 @@
-import { LinkManager, TemplateLink } from '@models';
+import { LinkManager, SyncManager, TemplateLink } from '@models';
 import { uriExists } from '@utils';
 import vscode from 'vscode';
 import { linkedOrgTreeContextValue } from './linkedTemplatesTreeContext';
@@ -55,6 +55,7 @@ export class LinkedTemplatesTreeDataProvider
 
 	constructor() {
 		this.disposables.push(LinkManager.onLinksSaved(() => this.changeEmitter.fire()));
+		this.disposables.push(SyncManager.onOrgLinkedTemplateBulkSyncUiChanged(() => this.changeEmitter.fire()));
 		this.disposables.push(vscode.workspace.onDidChangeWorkspaceFolders(() => this.changeEmitter.fire()));
 		this.disposables.push(
 			vscode.workspace.onDidCreateFiles(() => this.changeEmitter.fire()),
@@ -70,13 +71,16 @@ export class LinkedTemplatesTreeDataProvider
 	getTreeItem(element: LinkedTemplatesTreeNode): vscode.TreeItem {
 		switch (element.kind) {
 			case 'org': {
-				const item = new vscode.TreeItem(element.orgName, vscode.TreeItemCollapsibleState.Collapsed);
-				item.iconPath = new vscode.ThemeIcon('organization');
+				const label = `${element.orgName} (${element.links.length})`;
+				const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Collapsed);
+				const bulkActive = SyncManager.isOrgLinkedTemplateBulkSyncActive(element.orgId);
+				item.iconPath = new vscode.ThemeIcon(bulkActive ? 'sync~spin' : 'organization');
 				item.contextValue = linkedOrgTreeContextValue(element.orgId);
 				return item;
 			}
 			case 'template': {
 				const item = new vscode.TreeItem(element.link.template.name, vscode.TreeItemCollapsibleState.None);
+				item.id = `rewst-linked-template:${element.resourceUri.toString()}`;
 				item.resourceUri = element.resourceUri;
 				const rel = vscode.workspace.asRelativePath(element.resourceUri, false);
 				if (element.localFileMissing) {
