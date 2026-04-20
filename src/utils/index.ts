@@ -6,6 +6,7 @@ export { getHash } from './getHash';
 export { isDescendant } from './isDescendant';
 export { log } from './log';
 export { makeUniqueUri } from './makeUniqueUri';
+export { normalizeTemplateBodyForCompare } from './normalizeTemplateBodyForCompare';
 export { openTemplateById } from './openTemplateById';
 export { parseArgsUri } from './parseArgsUri';
 export { parseCookieString } from './parseCookieString';
