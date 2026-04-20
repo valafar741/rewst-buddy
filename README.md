@@ -1,6 +1,6 @@
 # Rewst Buddy — Unofficial VS Code Extension for Rewst
 
-> ⚠️ **Unofficial community project.** This extension is not affiliated with, endorsed by, or supported by Rewst LLC. "Rewst" is a trademark of its respective owner. Use at your own risk — for support, open an issue on [GitHub](https://github.com/totallynotjon/rewst-buddy/issues), not with Rewst.
+> ⚠️ **Unofficial community project.** This extension is not affiliated with, endorsed by, or supported by Rewst LLC. "Rewst" is a trademark of its respective owner. Use at your own risk — for support, open an issue on [GitHub](https://github.com/valafar741/rewst-buddy/issues), not with Rewst.
 
 ## About
 
@@ -23,8 +23,10 @@ Search "rewst-buddy" in the VS Code Extensions view, or install from the [Market
 ### 2. Link a single template
 
 - Open or create a local file
-- Right-click in the editor → **Link File to Template**
+- Right-click in the **editor** or the **Explorer** on that file → **Link File to Template**
 - Pick your organization and the template
+
+Linked files show a **link badge** and a subtle tint in the Explorer. Use **Unlink from Template** from the same menus when a file is already linked.
 
 ### 3. Edit and sync
 
@@ -40,6 +42,11 @@ Want to pull in **every template** from an organization at once? See the [Bulk F
 - Auto-fetch on open — picks up remote changes when you open a file
 - `Ctrl+Click` template navigation + hover info on `template('UUID')` calls
 - Template bundles — dependency-based grouping in the Explorer sidebar
+- **Linked templates** view (Rewst Buddy activity bar) — linked files in the **current workspace**, grouped by Rewst organization; missing local files show a **broken-link** style icon; right-click → **Create Local File from Link** to fetch the template from Rewst and create **parent folders** as needed
+- **Bulk org actions** — right-click an organization in **Linked templates** → **Download All Linked Templates** (overwrite local from Rewst) or **Upload All Linked Templates** (push local bodies to Rewst)
+- **Explorer decorations** — linked files get a link badge and a configurable teal accent (theme color `rewst-buddy.linkedTemplateExplorer`)
+- **Explorer context menu** — **Link File to Template** / **Unlink from Template** for files (when a session is active and the file’s link state matches)
+- **`.rewst-buddy` workspace file** — optional per–workspace-folder JSON (default **on**) so template/folder links can live in the repo and update after **git pull**; disables with setting `rewst-buddy.workspaceLinksFile`
 - Smart template opening — reuses existing linked files instead of creating untitled docs
 - File rename support + automatic stale link cleanup
 - Browser extension integration (sideload — not yet on the Chrome Web Store)
@@ -55,7 +62,7 @@ Rewst does not publish a public API, so this extension authenticates the same wa
 - No data is sent anywhere other than Rewst's own API.
 - Sessions inherit your current Rewst permissions — the extension can do nothing you can't already do in the browser.
 
-If you have security concerns, the codebase is MIT-licensed and open for audit — please [open an issue](https://github.com/totallynotjon/rewst-buddy/issues) with any findings.
+If you have security concerns, the codebase is MIT-licensed and open for audit — please [open an issue](https://github.com/valafar741/rewst-buddy/issues) with any findings.
 
 ## Configuration
 
@@ -63,8 +70,8 @@ Commands, settings, sidebar/status-bar walkthroughs, and multi-region setup: [do
 
 ## Support & Contributing
 
-- **Bugs & feature requests**: [GitHub Issues](https://github.com/totallynotjon/rewst-buddy/issues) (not Rewst support)
-- **Source**: [github.com/totallynotjon/rewst-buddy](https://github.com/totallynotjon/rewst-buddy)
+- **Bugs & feature requests**: [GitHub Issues](https://github.com/valafar741/rewst-buddy/issues) (not Rewst support)
+- **Source**: [github.com/valafar741/rewst-buddy](https://github.com/valafar741/rewst-buddy)
 
 ## License
 
