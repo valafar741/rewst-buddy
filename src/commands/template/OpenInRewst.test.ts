@@ -1,9 +1,9 @@
+import { LinkManager, TemplateLink } from '@models';
+import { SessionManager } from '@sessions';
+import { createMockSession, Fixtures, initTestEnvironment } from '@test';
 import * as assert from 'assert';
 import * as Mocha from 'mocha';
 import vscode from 'vscode';
-import { LinkManager, TemplateLink } from '@models';
-import { SessionManager } from '@sessions';
-import { initTestEnvironment, createMockSession, Fixtures } from '@test';
 import { OpenInRewst } from './OpenInRewst';
 
 const { suite, test, setup, teardown } = Mocha;
@@ -208,8 +208,8 @@ suite('Unit: OpenInRewst', () => {
 				region: {
 					name: 'NA',
 					cookieName: 'na_cookie',
-					graphqlUrl: 'https://api.rewst.io/graphql',
-					loginUrl: 'https://app.rewst.io',
+					graphqlUrl: 'https://api.rewst.asia/graphql',
+					loginUrl: 'https://app.rewst.asia',
 				},
 			},
 		});

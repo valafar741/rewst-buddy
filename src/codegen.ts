@@ -1,7 +1,7 @@
 import type { CodegenConfig } from '@graphql-codegen/cli';
 
 const config: CodegenConfig = {
-	schema: 'https://api.rewst.io/graphql',
+	schema: 'https://api.rewst.asia/graphql',
 	documents: ['src/**/*.graphql'],
 	generates: {
 		'src/sessions/graphql/sdk.ts': {

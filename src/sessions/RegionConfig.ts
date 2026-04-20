@@ -12,10 +12,10 @@ export function getRegionConfigs(): RegionConfig[] {
 	const config = vscode.workspace.getConfiguration('rewst-buddy');
 	const regions = config.get<RegionConfig[]>('regions', [
 		{
-			name: 'North America',
-			cookieName: 'appSession',
-			graphqlUrl: 'https://api.rewst.io/graphql',
-			loginUrl: 'https://app.rewst.io',
+			name: 'Australia',
+			cookieName: 'auAppSession',
+			graphqlUrl: 'https://api.rewst.asia/graphql',
+			loginUrl: 'https://app.rewst.asia',
 		},
 	]);
 
