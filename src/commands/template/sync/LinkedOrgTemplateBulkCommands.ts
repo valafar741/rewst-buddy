@@ -4,7 +4,25 @@ import { log } from '@utils';
 import vscode from 'vscode';
 import GenericCommand from '../../GenericCommand';
 
-function findTreeItemContextValueFromArgs(args: unknown[]): string | undefined {
+/** VS Code passes the TreeDataProvider element (e.g. OrgGroupNode), not the TreeItem — org rows have no contextValue on the element. */
+function tryParseLinkedTemplatesOrgIdFromArg(x: unknown): string | undefined {
+	if (!x || typeof x !== 'object' || Array.isArray(x)) {
+		return undefined;
+	}
+	const o = x as { kind?: unknown; orgId?: unknown; contextValue?: unknown };
+	if (typeof o.contextValue === 'string' && o.contextValue.length > 0) {
+		const fromCv = parseOrgIdFromLinkedTemplatesTreeContext(o.contextValue);
+		if (fromCv) {
+			return fromCv;
+		}
+	}
+	if (o.kind === 'org' && typeof o.orgId === 'string') {
+		return o.orgId;
+	}
+	return undefined;
+}
+
+function findOrgIdFromLinkedTemplatesTreeArgs(args: unknown[]): string | undefined {
 	const stack: unknown[] = [...args];
 	while (stack.length) {
 		const x = stack.pop()!;
@@ -12,11 +30,9 @@ function findTreeItemContextValueFromArgs(args: unknown[]): string | undefined {
 			stack.push(...x);
 			continue;
 		}
-		if (x && typeof x === 'object' && 'contextValue' in x) {
-			const cv = (x as vscode.TreeItem).contextValue;
-			if (typeof cv === 'string' && cv.length > 0) {
-				return cv;
-			}
+		const id = tryParseLinkedTemplatesOrgIdFromArg(x);
+		if (id) {
+			return id;
 		}
 	}
 	return undefined;
@@ -29,7 +45,7 @@ function workspaceTemplateLinksForOrg(orgId: string) {
 }
 
 function orgIdFromLinkedTemplatesTreeArgs(args: unknown[]): string | undefined {
-	return parseOrgIdFromLinkedTemplatesTreeContext(findTreeItemContextValueFromArgs(args));
+	return findOrgIdFromLinkedTemplatesTreeArgs(args);
 }
 
 async function runBulkForOrg(args: unknown[], operation: 'download' | 'upload'): Promise<void> {
@@ -48,27 +64,57 @@ async function runBulkForOrg(args: unknown[], operation: 'download' | 'upload'):
 	const verb = operation === 'download' ? 'download' : 'upload';
 	let ok = 0;
 	let failed = 0;
-	for (const link of links) {
-		const uri = vscode.Uri.parse(link.uriString);
+	let skippedConcurrent = 0;
+
+	SyncManager.beginOrgLinkedTemplateBulkSync(orgId);
+	try {
+		// Defer LinkManager.fire / globalState / .rewst-buddy until all items finish so tree views and activity bar do not refresh per file.
+		LinkManager.beginBatch();
 		try {
-			const doc = await vscode.workspace.openTextDocument(uri);
-			if (operation === 'download') {
-				await SyncManager.forceDownloadRemoteTemplate(doc);
-			} else {
-				await SyncManager.forceUploadLocalTemplate(doc);
+			for (const link of links) {
+				const uri = vscode.Uri.parse(link.uriString);
+				try {
+					if (operation === 'download') {
+						const outcome = await SyncManager.forceDownloadRemoteTemplate(uri);
+						if (outcome === 'skipped-concurrent') {
+							skippedConcurrent++;
+						} else {
+							ok++;
+						}
+					} else {
+						const doc = await vscode.workspace.openTextDocument(uri);
+						await SyncManager.forceUploadLocalTemplate(doc);
+						ok++;
+					}
+				} catch (e) {
+					log.notifyError(`Failed to ${verb} ${uri.fsPath}`, e);
+					failed++;
+				}
 			}
-			ok++;
-		} catch (e) {
-			log.notifyError(`Failed to ${verb} ${uri.fsPath}`, e);
-			failed++;
+		} finally {
+			await LinkManager.endBatch();
 		}
+	} finally {
+		SyncManager.endOrgLinkedTemplateBulkSync(orgId);
 	}
 
 	const past = operation === 'download' ? 'Downloaded' : 'Uploaded';
+	const parts: string[] = [];
+	if (ok > 0) {
+		parts.push(`${past} ${ok} template(s)`);
+	}
+	if (operation === 'download' && skippedConcurrent > 0) {
+		parts.push(`skipped ${skippedConcurrent} (already in progress)`);
+	}
+	if (failed > 0) {
+		parts.push(`${failed} failed`);
+	}
+	const summary =
+		parts.length > 0 ? parts.join('; ') : `No templates ${verb === 'download' ? 'updated' : 'uploaded'}`;
 	if (failed === 0) {
-		log.notifyInfo(`SUCCESS: ${past} ${ok} template(s) for organization`);
+		log.notifyInfo(`SUCCESS: ${summary}`);
 	} else {
-		log.notifyInfo(`${past} ${ok} template(s); ${failed} failed`);
+		log.notifyInfo(summary);
 	}
 }
 
