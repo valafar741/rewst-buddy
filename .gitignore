@@ -9,3 +9,5 @@ tsconfig.tsbuildinfo
 .claude/settings.*
 .claudeignore
 .LOCAL
+
+.specstory/
