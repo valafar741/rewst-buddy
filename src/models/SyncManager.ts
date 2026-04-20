@@ -1,18 +1,89 @@
 import type { SessionChangeEvent } from '@events';
 import { FolderLink, Link, TemplateLink } from '@models';
 import { FullTemplateFragment, Session, SessionManager } from '@sessions';
-import { findAllTemplateReferences, getHash, log, makeUniqueUri, writeTextFile } from '@utils';
+import {
+	findAllTemplateReferences,
+	getHash,
+	log,
+	makeUniqueUri,
+	normalizeTemplateBodyForCompare,
+	writeTextFile,
+} from '@utils';
 import vscode, { Uri } from 'vscode';
 import { LinkManager } from './LinkManager';
 import { SyncOnSaveManager } from './SyncOnSaveManager';
 import { determineSyncAction } from './syncDecision';
 
+/** Returned by `forceDownloadRemoteTemplate` so bulk operations can report skips vs writes. */
+export type ForceDownloadRemoteTemplateOutcome = 'applied' | 'metadata-in-sync' | 'skipped-concurrent';
+
+function uriHasOpenTextTab(uri: vscode.Uri): boolean {
+	const key = uri.toString();
+	const path = uri.fsPath;
+	return vscode.window.tabGroups.all.some(group =>
+		group.tabs.some(tab => {
+			if (!(tab.input instanceof vscode.TabInputText)) {
+				return false;
+			}
+			const u = tab.input.uri;
+			return u.toString() === key || u.fsPath === path;
+		}),
+	);
+}
+
+async function readUtf8FileOrThrow(uri: vscode.Uri): Promise<string> {
+	const bytes = await vscode.workspace.fs.readFile(uri);
+	return new TextDecoder('utf-8').decode(bytes);
+}
+
 export const SyncManager = new (class _ implements vscode.Disposable {
 	private syncingUris = new Set<string>();
+	/** Nesting depth for Download/Upload all linked templates per org (org row spinner for whole run). */
+	private orgLinkedTemplateBulkSyncDepth = new Map<string, number>();
+	/** Fires when a bulk Download/Upload all linked templates run starts or ends (Linked Templates tree org spinner). */
+	private orgLinkedTemplateBulkSyncUiEmitter = new vscode.EventEmitter<void>();
+	readonly onOrgLinkedTemplateBulkSyncUiChanged = this.orgLinkedTemplateBulkSyncUiEmitter.event;
 	private disposables: vscode.Disposable[] = [];
 	private documentEventDisposables: vscode.Disposable[] = [];
 	private interval: NodeJS.Timeout | undefined;
 	private isActive = false;
+
+	/** True while a bulk Download/Upload all linked templates command is running for this org id. */
+	isOrgLinkedTemplateBulkSyncActive(orgId: string): boolean {
+		return (this.orgLinkedTemplateBulkSyncDepth.get(orgId) ?? 0) > 0;
+	}
+
+	/** Call when starting bulk download/upload for an org (pairs with {@link endOrgLinkedTemplateBulkSync}). */
+	beginOrgLinkedTemplateBulkSync(orgId: string): void {
+		const n = (this.orgLinkedTemplateBulkSyncDepth.get(orgId) ?? 0) + 1;
+		this.orgLinkedTemplateBulkSyncDepth.set(orgId, n);
+		if (n === 1) {
+			this.orgLinkedTemplateBulkSyncUiEmitter.fire();
+		}
+	}
+
+	/** Call in `finally` after bulk download/upload for an org finishes. */
+	endOrgLinkedTemplateBulkSync(orgId: string): void {
+		const prev = this.orgLinkedTemplateBulkSyncDepth.get(orgId) ?? 0;
+		if (prev <= 0) {
+			return;
+		}
+		const n = prev - 1;
+		if (n <= 0) {
+			this.orgLinkedTemplateBulkSyncDepth.delete(orgId);
+			this.orgLinkedTemplateBulkSyncUiEmitter.fire();
+		} else {
+			this.orgLinkedTemplateBulkSyncDepth.set(orgId, n);
+		}
+	}
+
+	private markLinkedTemplateSyncStarted(uri: vscode.Uri): void {
+		this.syncingUris.add(uri.toString());
+	}
+
+	private markLinkedTemplateSyncFinished(uri: vscode.Uri): void {
+		this.syncingUris.delete(uri.toString());
+	}
 
 	init(): _ {
 		// Subscribe to session changes
@@ -74,6 +145,7 @@ export const SyncManager = new (class _ implements vscode.Disposable {
 	dispose(): void {
 		this.deactivate();
 		this.disposables.forEach(d => d.dispose());
+		this.orgLinkedTemplateBulkSyncUiEmitter.dispose();
 	}
 
 	private async checkAutoFetch(doc: vscode.TextDocument) {
@@ -187,37 +259,40 @@ export const SyncManager = new (class _ implements vscode.Disposable {
 			return;
 		}
 
-		this.syncingUris.add(uriKey);
+		this.markLinkedTemplateSyncStarted(doc.uri);
 		try {
 			await this.syncTemplateInternal(doc);
 			log.trace('syncTemplate: completed successfully');
 		} catch (e) {
 			throw log.error('syncTemplate: failed', e);
 		} finally {
-			this.syncingUris.delete(uriKey);
+			this.markLinkedTemplateSyncFinished(doc.uri);
 		}
 	}
 
-	/** Overwrite local file with latest remote template body (no merge / conflict prompt). */
-	async forceDownloadRemoteTemplate(doc: vscode.TextDocument): Promise<void> {
-		const uriKey = doc.uri.toString();
+	/**
+	 * Pull latest remote template: compares Rewst body to **on-disk** file text. If they match, only link metadata is
+	 * updated and no editor/tab is touched. If they differ, applies the remote body in the editor **without saving**;
+	 * opens a tab (preserve focus) only when the file was not already open in a text editor tab.
+	 */
+	async forceDownloadRemoteTemplate(uri: vscode.Uri): Promise<ForceDownloadRemoteTemplateOutcome> {
+		const uriKey = uri.toString();
 		if (this.syncingUris.has(uriKey)) {
 			log.debug('forceDownloadRemoteTemplate: already in progress, skipping');
-			return;
+			return 'skipped-concurrent';
 		}
-		this.syncingUris.add(uriKey);
+		this.markLinkedTemplateSyncStarted(uri);
 		try {
-			await this.forceDownloadRemoteTemplateInternal(doc);
+			return await this.forceDownloadRemoteTemplateInternal(uri);
 		} catch (e) {
 			throw log.error('forceDownloadRemoteTemplate: failed', e);
 		} finally {
-			this.syncingUris.delete(uriKey);
+			this.markLinkedTemplateSyncFinished(uri);
 		}
 	}
 
-	private async forceDownloadRemoteTemplateInternal(doc: vscode.TextDocument): Promise<void> {
-		await this.ensureTemplateDocumentSaved(doc);
-		const link = LinkManager.getTemplateLink(doc.uri);
+	private async forceDownloadRemoteTemplateInternal(uri: vscode.Uri): Promise<ForceDownloadRemoteTemplateOutcome> {
+		const link = LinkManager.getTemplateLink(uri);
 		const session = SessionManager.getSessionForOrg(link.org.id);
 		let remoteTemplate: FullTemplateFragment;
 		try {
@@ -225,7 +300,67 @@ export const SyncManager = new (class _ implements vscode.Disposable {
 		} catch {
 			throw log.error('forceDownloadRemoteTemplateInternal: failed to fetch remote template');
 		}
-		await this.applyTemplateToDocument(doc, session, remoteTemplate);
+
+		const localDiskBody = await readUtf8FileOrThrow(uri);
+		const remoteBody = remoteTemplate.body ?? '';
+
+		const localNorm = normalizeTemplateBodyForCompare(localDiskBody);
+		const remoteNorm = normalizeTemplateBodyForCompare(remoteBody);
+		if (localNorm === remoteNorm) {
+			remoteTemplate.body = '';
+			const templateLink: TemplateLink = {
+				type: 'Template',
+				bodyHash: getHash(localNorm),
+				referencedTemplateIds: findAllTemplateReferences(localNorm),
+				template: remoteTemplate,
+				uriString: uri.toString(),
+				org: session.profile.org,
+			};
+			this.addLink(templateLink, uri);
+			return 'metadata-in-sync';
+		}
+
+		const hadOpenTab = uriHasOpenTextTab(uri);
+		const doc = await vscode.workspace.openTextDocument(uri);
+		await this.applyRemoteTemplateBodyToOpenDocumentWithoutSaving(doc, session, remoteTemplate);
+		if (!hadOpenTab) {
+			await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
+		}
+		return 'applied';
+	}
+
+	/** Replace document text with remote body and refresh the template link; does not write to disk. */
+	private async applyRemoteTemplateBodyToOpenDocumentWithoutSaving(
+		doc: vscode.TextDocument,
+		session: Session,
+		remoteTemplate: FullTemplateFragment,
+	): Promise<void> {
+		log.trace('applyRemoteTemplateBodyToOpenDocumentWithoutSaving', {
+			templateId: remoteTemplate.id,
+			bodyLength: remoteTemplate.body?.length ?? 0,
+		});
+
+		const body = remoteTemplate.body ?? '';
+		remoteTemplate.body = '';
+
+		const edit = new vscode.WorkspaceEdit();
+		edit.replace(
+			doc.uri,
+			new vscode.Range(doc.lineAt(0).range.start, doc.lineAt(doc.lineCount - 1).range.end),
+			body,
+		);
+		await vscode.workspace.applyEdit(edit);
+
+		const templateLink: TemplateLink = {
+			type: 'Template',
+			bodyHash: getHash(body),
+			referencedTemplateIds: findAllTemplateReferences(body),
+			template: remoteTemplate,
+			uriString: doc.uri.toString(),
+			org: session.profile.org,
+		};
+
+		this.addLink(templateLink, doc.uri);
 	}
 
 	/** Push current local file body to Rewst (no merge / conflict prompt). */
@@ -235,13 +370,13 @@ export const SyncManager = new (class _ implements vscode.Disposable {
 			log.debug('forceUploadLocalTemplate: already in progress, skipping');
 			return;
 		}
-		this.syncingUris.add(uriKey);
+		this.markLinkedTemplateSyncStarted(doc.uri);
 		try {
 			await this.forceUploadLocalTemplateInternal(doc);
 		} catch (e) {
 			throw log.error('forceUploadLocalTemplate: failed', e);
 		} finally {
-			this.syncingUris.delete(uriKey);
+			this.markLinkedTemplateSyncFinished(doc.uri);
 		}
 	}
 
@@ -367,38 +502,49 @@ export const SyncManager = new (class _ implements vscode.Disposable {
 	}
 
 	async applyTemplateToDocument(doc: vscode.TextDocument, session: Session, remoteTemplate: FullTemplateFragment) {
-		log.trace('applyTemplateToDocument: applying remote template', {
-			templateId: remoteTemplate.id,
-			bodyLength: remoteTemplate.body?.length ?? 0,
-		});
-
-		const body = remoteTemplate.body;
-		remoteTemplate.body = '';
-
-		const edit = new vscode.WorkspaceEdit();
-		edit.replace(
-			doc.uri,
-			new vscode.Range(doc.lineAt(0).range.start, doc.lineAt(doc.lineCount - 1).range.end),
-			body,
-		);
-		await vscode.workspace.applyEdit(edit);
-
-		const templateLink: TemplateLink = {
-			type: 'Template',
-			bodyHash: getHash(body),
-			referencedTemplateIds: findAllTemplateReferences(body),
-			template: remoteTemplate,
-			uriString: doc.uri.toString(),
-			org: session.profile.org,
-		};
-
-		this.addLink(templateLink, doc.uri);
-
-		if ((await vscode.workspace.save(doc.uri)) === undefined) {
-			throw log.error('applyTemplateToDocument: failed to save');
+		const uriKey = doc.uri.toString();
+		const weOwnSyncActivity = !this.syncingUris.has(uriKey);
+		if (weOwnSyncActivity) {
+			this.markLinkedTemplateSyncStarted(doc.uri);
 		}
+		try {
+			log.trace('applyTemplateToDocument: applying remote template', {
+				templateId: remoteTemplate.id,
+				bodyLength: remoteTemplate.body?.length ?? 0,
+			});
 
-		log.trace('applyTemplateToDocument: completed');
+			const body = remoteTemplate.body ?? '';
+			remoteTemplate.body = '';
+
+			const edit = new vscode.WorkspaceEdit();
+			edit.replace(
+				doc.uri,
+				new vscode.Range(doc.lineAt(0).range.start, doc.lineAt(doc.lineCount - 1).range.end),
+				body,
+			);
+			await vscode.workspace.applyEdit(edit);
+
+			const templateLink: TemplateLink = {
+				type: 'Template',
+				bodyHash: getHash(body),
+				referencedTemplateIds: findAllTemplateReferences(body),
+				template: remoteTemplate,
+				uriString: doc.uri.toString(),
+				org: session.profile.org,
+			};
+
+			this.addLink(templateLink, doc.uri);
+
+			if ((await vscode.workspace.save(doc.uri)) === undefined) {
+				throw log.error('applyTemplateToDocument: failed to save');
+			}
+
+			log.trace('applyTemplateToDocument: completed');
+		} finally {
+			if (weOwnSyncActivity) {
+				this.markLinkedTemplateSyncFinished(doc.uri);
+			}
+		}
 	}
 
 	private addLink(link: Link, uri: Uri) {
