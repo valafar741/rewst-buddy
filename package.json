@@ -6,20 +6,20 @@
 	"version": "0.39.3",
 	"icon": "media/rewst-buddy.png",
 	"engines": {
-		"vscode": "^1.107.0"
+		"vscode": "^1.105.0"
 	},
 	"categories": [
 		"Other"
 	],
 	"repository": {
 		"type": "git",
-		"url": "git@github.com:totallynotjon/rewst-buddy.git"
+		"url": "git@github.com:valafar741/rewst-buddy.git"
 	},
 	"bugs": {
-		"url": "https://github.com/totallynotjon/rewst-buddy/issues"
+		"url": "https://github.com/valafar741/rewst-buddy/issues"
 	},
 	"license": "MIT",
-	"homepage": "https://github.com/totallynotjon/rewst-buddy/blob/main/README.md",
+	"homepage": "https://github.com/valafar741/rewst-buddy/blob/main/README.md",
 	"keywords": [
 		"rewst",
 		"Rewst",
@@ -38,10 +38,10 @@
 					"type": "array",
 					"default": [
 						{
-							"name": "North America",
-							"cookieName": "appSession",
-							"graphqlUrl": "https://api.rewst.io/graphql",
-							"loginUrl": "https://app.rewst.io"
+							"name": "Australia",
+							"cookieName": "auAppSession",
+							"graphqlUrl": "https://api.rewst.asia/graphql",
+							"loginUrl": "https://app.rewst.asia"
 						}
 					],
 					"description": "Regional configuration for different Rewst instances",
@@ -99,9 +99,25 @@
 					"type": "string",
 					"default": "127.0.0.1",
 					"description": "Host address to bind the server (default: 127.0.0.1 for localhost-only access)"
+				},
+				"rewst-buddy.workspaceLinksFile": {
+					"type": "boolean",
+					"default": true,
+					"description": "When enabled, sync template/folder links to a workspace file .rewst-buddy (one per workspace folder) so links can be committed and shared via git. When the file changes (e.g. after git pull), extension state for that folder is updated from the file."
 				}
 			}
 		},
+		"colors": [
+			{
+				"id": "rewst-buddy.linkedTemplateExplorer",
+				"description": "Accent for Rewst-linked template files in the Explorer (badge and label tint).",
+				"defaults": {
+					"dark": "#2DD4BFAA",
+					"light": "#0D9488AA",
+					"highContrast": "#2DD4BF"
+				}
+			}
+		],
 		"commands": [
 			{
 				"command": "rewst-buddy.OpenToTheSide",
@@ -147,6 +163,26 @@
 				"command": "rewst-buddy.SyncTemplate",
 				"title": "Sync Template",
 				"icon": "$(sync)"
+			},
+			{
+				"command": "rewst-buddy.prefix.DownloadLinkedOrgTemplates",
+				"title": "Rewst Buddy: Download All Linked Templates",
+				"icon": "$(cloud-download)"
+			},
+			{
+				"command": "rewst-buddy.DownloadLinkedOrgTemplates",
+				"title": "Download All Linked Templates",
+				"icon": "$(cloud-download)"
+			},
+			{
+				"command": "rewst-buddy.prefix.UploadLinkedOrgTemplates",
+				"title": "Rewst Buddy: Upload All Linked Templates",
+				"icon": "$(cloud-upload)"
+			},
+			{
+				"command": "rewst-buddy.UploadLinkedOrgTemplates",
+				"title": "Upload All Linked Templates",
+				"icon": "$(cloud-upload)"
 			},
 			{
 				"command": "rewst-buddy.prefix.CopyTemplateID",
@@ -239,6 +275,16 @@
 				"icon": "$(file-add)"
 			},
 			{
+				"command": "rewst-buddy.prefix.CreateLinkedTemplateLocalFile",
+				"title": "Rewst Buddy: Create Local File from Link",
+				"icon": "$(new-file)"
+			},
+			{
+				"command": "rewst-buddy.CreateLinkedTemplateLocalFile",
+				"title": "Create Local File from Link",
+				"icon": "$(new-file)"
+			},
+			{
 				"command": "rewst-buddy.prefix.EnableSyncOnSave",
 				"title": "Rewst Buddy: Enable Sync-On-Save",
 				"icon": "$(sync)"
@@ -271,14 +317,19 @@
 		"views": {
 			"rewst-buddy-sidebar": [
 				{
-					"type": "webview",
-					"id": "rewst-buddy.sessionInput",
-					"name": "Session",
+					"id": "rewst-buddy.linkedTemplatesTree",
+					"name": "Linked templates",
 					"icon": ""
 				},
 				{
 					"id": "rewst-buddy.sessionTree",
 					"name": "Sessions",
+					"icon": ""
+				},
+				{
+					"type": "webview",
+					"id": "rewst-buddy.sessionInput",
+					"name": "Session",
 					"icon": ""
 				}
 			],
@@ -293,6 +344,16 @@
 			{
 				"view": "rewst-buddy.bundleTree",
 				"contents": "No template bundles found.\n[Bundle Templates](command:rewst-buddy.prefix.BundleTemplates)"
+			},
+			{
+				"view": "rewst-buddy.linkedTemplatesTree",
+				"contents": "No linked templates in this workspace.\n[Link File to Template](command:rewst-buddy.prefix.LinkTemplateInteractive)",
+				"when": "rewst-buddy.anyActiveSessions"
+			},
+			{
+				"view": "rewst-buddy.linkedTemplatesTree",
+				"contents": "No linked templates in this workspace.\nStart a session in the Session view, then link files from the editor or command palette.",
+				"when": "!rewst-buddy.anyActiveSessions"
 			}
 		],
 		"submenus": [],
@@ -311,11 +372,20 @@
 					"when": "rewst-buddy.anyActiveSessions && explorerResourceIsFolder && resourcePath in rewst-buddy.linkedFolders"
 				},
 				{
+					"command": "rewst-buddy.LinkTemplateInteractive",
+					"when": "rewst-buddy.anyActiveSessions && !explorerResourceIsFolder && resourcePath not in rewst-buddy.linkedTemplates"
+				},
+				{
 					"command": "rewst-buddy.CopyTemplateID",
 					"when": "!explorerResourceIsFolder && resourcePath in rewst-buddy.linkedTemplates"
 				},
 				{
 					"command": "rewst-buddy.OpenInRewst",
+					"when": "!explorerResourceIsFolder && resourcePath in rewst-buddy.linkedTemplates"
+				},
+				{
+					"command": "rewst-buddy.UnlinkTemplate",
+					"group": "z_rewst",
 					"when": "!explorerResourceIsFolder && resourcePath in rewst-buddy.linkedTemplates"
 				}
 			],
@@ -393,7 +463,19 @@
 					"when": "false"
 				},
 				{
+					"command": "rewst-buddy.DownloadLinkedOrgTemplates",
+					"when": "false"
+				},
+				{
+					"command": "rewst-buddy.UploadLinkedOrgTemplates",
+					"when": "false"
+				},
+				{
 					"command": "rewst-buddy.CreateTemplate",
+					"when": "false"
+				},
+				{
+					"command": "rewst-buddy.CreateLinkedTemplateLocalFile",
 					"when": "false"
 				},
 				{
@@ -449,6 +531,21 @@
 				}
 			],
 			"view/item/context": [
+				{
+					"command": "rewst-buddy.DownloadLinkedOrgTemplates",
+					"when": "view == rewst-buddy.linkedTemplatesTree && viewItem =~ /^linkedTemplatesOrg:/ && rewst-buddy.anyActiveSessions",
+					"group": "z_rewst@1"
+				},
+				{
+					"command": "rewst-buddy.UploadLinkedOrgTemplates",
+					"when": "view == rewst-buddy.linkedTemplatesTree && viewItem =~ /^linkedTemplatesOrg:/ && rewst-buddy.anyActiveSessions",
+					"group": "z_rewst@2"
+				},
+				{
+					"command": "rewst-buddy.CreateLinkedTemplateLocalFile",
+					"when": "view == rewst-buddy.linkedTemplatesTree && viewItem == linkedTemplateMissing && rewst-buddy.anyActiveSessions",
+					"group": "z_rewst@0"
+				},
 				{
 					"command": "rewst-buddy.OpenToTheSide",
 					"when": "viewItem == bundleTemplate",
@@ -560,7 +657,9 @@
 		"test:unit": "npm run compile:test && vscode-test -- --grep 'Unit:'",
 		"test:integration": "npm run compile:test && vscode-test -- --grep 'Integration:'",
 		"compile:test": "webpack --mode development",
+		"build:all": "npm run build && npm run build:vsix",
 		"build": "npm run package",
+		"build:vsix": "npx @vscode/vsce package --baseContentUrl https://github.com/valafar741/rewst-buddy/blob/main --baseImagesUrl https://github.com/valafar741/rewst-buddy/raw/main",
 		"dev": "npm run watch",
 		"watch": "npm-run-all -p watch:*",
 		"watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
@@ -583,7 +682,7 @@
 		"@types/glob": "^8.1.0",
 		"@types/mocha": "^10.0.10",
 		"@types/node": "^25.0.3",
-		"@types/vscode": "^1.107.0",
+		"@types/vscode": "^1.105.0",
 		"@typescript-eslint/eslint-plugin": "^8.50.0",
 		"@typescript-eslint/parser": "^8.50.0",
 		"@vscode/test-cli": "^0.0.12",
