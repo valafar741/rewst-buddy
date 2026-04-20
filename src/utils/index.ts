@@ -1,5 +1,6 @@
 export { createAndLinkNewTemplate } from './createAndLinkNewTemplate';
 export { findAllTemplateReferences } from '../providers/templatePatternUtils';
+export { ensureParentDirectories } from './ensureParentDirectories';
 export { ensureSavedDocument, getDocumentFromArgs } from './ensureSavedDocument';
 export { getHash } from './getHash';
 export { isDescendant } from './isDescendant';
