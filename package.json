@@ -185,6 +185,26 @@
 				"icon": "$(cloud-upload)"
 			},
 			{
+				"command": "rewst-buddy.prefix.DownloadLinkedTemplateFile",
+				"title": "Rewst Buddy: Download Linked Template from Rewst",
+				"icon": "$(cloud-download)"
+			},
+			{
+				"command": "rewst-buddy.DownloadLinkedTemplateFile",
+				"title": "Download Linked Template from Rewst",
+				"icon": "$(cloud-download)"
+			},
+			{
+				"command": "rewst-buddy.prefix.UploadLinkedTemplateFile",
+				"title": "Rewst Buddy: Upload Linked Template to Rewst",
+				"icon": "$(cloud-upload)"
+			},
+			{
+				"command": "rewst-buddy.UploadLinkedTemplateFile",
+				"title": "Upload Linked Template to Rewst",
+				"icon": "$(cloud-upload)"
+			},
+			{
 				"command": "rewst-buddy.prefix.CopyTemplateID",
 				"title": "Rewst Buddy: Copy Template ID",
 				"icon": "$(copy)"
@@ -384,6 +404,14 @@
 					"when": "!explorerResourceIsFolder && resourcePath in rewst-buddy.linkedTemplates"
 				},
 				{
+					"command": "rewst-buddy.DownloadLinkedTemplateFile",
+					"when": "rewst-buddy.anyActiveSessions && !explorerResourceIsFolder && resourcePath in rewst-buddy.linkedTemplates"
+				},
+				{
+					"command": "rewst-buddy.UploadLinkedTemplateFile",
+					"when": "rewst-buddy.anyActiveSessions && !explorerResourceIsFolder && resourcePath in rewst-buddy.linkedTemplates"
+				},
+				{
 					"command": "rewst-buddy.UnlinkTemplate",
 					"group": "z_rewst",
 					"when": "!explorerResourceIsFolder && resourcePath in rewst-buddy.linkedTemplates"
@@ -468,6 +496,22 @@
 				},
 				{
 					"command": "rewst-buddy.UploadLinkedOrgTemplates",
+					"when": "false"
+				},
+				{
+					"command": "rewst-buddy.prefix.DownloadLinkedTemplateFile",
+					"when": "rewst-buddy.anyActiveSessions && resourcePath in rewst-buddy.linkedTemplates"
+				},
+				{
+					"command": "rewst-buddy.DownloadLinkedTemplateFile",
+					"when": "false"
+				},
+				{
+					"command": "rewst-buddy.prefix.UploadLinkedTemplateFile",
+					"when": "rewst-buddy.anyActiveSessions && resourcePath in rewst-buddy.linkedTemplates"
+				},
+				{
+					"command": "rewst-buddy.UploadLinkedTemplateFile",
 					"when": "false"
 				},
 				{
